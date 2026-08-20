@@ -108,15 +108,57 @@ document.getElementById('saveLesson').onclick=()=>{
 
 document.getElementById('loadLesson').onclick=()=>document.getElementById('loadLessonFile').click();
 document.getElementById('loadLessonFile').onchange=async e=>{
-  const f=e.target.files[0]; if(!f)return;
+  const f=e.target.files[0];
+  if(!f) return;
   try{
     const d=JSON.parse(await f.text());
-    if(!Array.isArray(d.tracks)) throw new Error('Formato inválido');
-    lessonTracks=d.tracks;
-    activeLessonIndex=lessonTracks.length?0:-1;
-    renderLesson();
-    if(activeLessonIndex>=0) loadLessonTrack(activeLessonIndex,false);
+
+    // Aula completa já guardada
+    if(Array.isArray(d.tracks)){
+      lessonTracks=d.tracks;
+      activeLessonIndex=lessonTracks.length?0:-1;
+      renderLesson();
+      if(activeLessonIndex>=0) loadLessonTrack(activeLessonIndex,false);
+      e.target.value='';
+      return;
+    }
+
+    // Plano individual de uma música: adiciona à aula atual
+    if(d.track && Array.isArray(d.cues)){
+      const item={
+        track:{...d.track},
+        bpm:d.bpm||null,
+        cues:d.cues.map(c=>({time:Number(c.time),name:c.name}))
+      };
+      if(!item.track.id) throw new Error('Faixa sem identificação Spotify');
+      const existing=lessonTracks.findIndex(x=>x.track?.id===item.track.id);
+      if(existing>=0){
+        lessonTracks[existing]=item;
+        activeLessonIndex=existing;
+      }else{
+        lessonTracks.push(item);
+        activeLessonIndex=lessonTracks.length-1;
+      }
+      currentTrack={...item.track};
+      trackBpm=item.bpm;
+      cues=item.cues.map(c=>({...c}));
+      currentPosition=0;
+      currentDuration=currentTrack.duration||0;
+      document.getElementById('bpmInput').value=trackBpm||'';
+      renderCues();
+      showTrack();
+      updateSeekUI();
+      updateRun();
+      renderLesson();
+      alert('Faixa adicionada à aula.');
+      e.target.value='';
+      return;
+    }
+
+    throw new Error('Formato não reconhecido');
   }catch(err){
-    alert('Não consegui carregar esta aula.');
+    console.error(err);
+    alert('Não consegui carregar este ficheiro. Confirma se é uma aula ou uma música guardada no MusicFit.');
+    e.target.value='';
   }
 };
