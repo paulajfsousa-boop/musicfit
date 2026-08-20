@@ -18,9 +18,35 @@ function loadSpotifySDK() { if(document.getElementById('spotify-sdk')) return; c
 window.onSpotifyWebPlaybackSDKReady = () => { player = new Spotify.Player({name:'MusicFit Cue',getOAuthToken: cb => cb(accessToken),volume:0.8}); player.addListener('ready', ({device_id})=>{deviceId=device_id;document.getElementById('playerStatus').textContent='Player Spotify pronto.';}); player.addListener('not_ready',()=>document.getElementById('playerStatus').textContent='Player Spotify indisponível.'); player.addListener('initialization_error',e=>document.getElementById('playerStatus').textContent='Erro: '+e.message); player.addListener('authentication_error',e=>document.getElementById('playerStatus').textContent='Erro de autenticação: '+e.message); player.addListener('account_error',e=>document.getElementById('playerStatus').textContent='A reprodução Web Playback requer Spotify Premium.'); player.addListener('player_state_changed',state=>{ if(!state) return; playerPaused=state.paused; updateRunPlayPause(); currentPosition=state.position/1000; currentDuration=state.duration/1000; updateSeekUI(); const tw=state.track_window.current_track; currentTrack={uri:tw.uri,id:tw.id,name:tw.name,artist:tw.artists.map(a=>a.name).join(', '),image:tw.album.images?.[0]?.url||'',duration:state.duration/1000}; showTrack(); updateRun(); if(lessonPlaying && !switchingTrack){ const remaining=(state.duration-state.position)/1000; if(state.paused && state.position===0 && activeLessonIndex>=0){} else if(remaining<=0.35){advanceLessonTrack();}} }); player.connect(); };
 async function api(path, options={}) { const r=await fetch('https://api.spotify.com/v1'+path,{...options,headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json',...(options.headers||{})}}); if(r.status===204) return null; const text=await r.text(); let d=null; if(text){try{d=JSON.parse(text);}catch(e){d=text;}} if(!r.ok){const msg=(d&&typeof d==='object'&&d.error?.message)?d.error.message:(typeof d==='string'?d:'Erro Spotify');throw new Error(msg);} return d; }
 document.getElementById('searchBtn').onclick=async()=>{ const q=document.getElementById('searchInput').value.trim(); if(!q)return; const d=await api('/search?type=track&limit=8&q='+encodeURIComponent(q)); const box=document.getElementById('results'); box.innerHTML=''; d.tracks.items.forEach(t=>{ const div=document.createElement('div'); div.className='track'; div.innerHTML=`<img class="cover" src="${t.album.images?.[1]?.url||t.album.images?.[0]?.url||''}"><div class="trackmeta"><b>${esc(t.name)}</b><span>${esc(t.artists.map(a=>a.name).join(', '))}</span></div><button>Escolher</button>`; div.querySelector('button').onclick=()=>selectTrack(t); box.appendChild(div); }); };
-function selectTrack(t) { currentTrack={uri:t.uri,id:t.id,name:t.name,artist:t.artists.map(a=>a.name).join(', '),image:t.album.images?.[0]?.url||'',duration:t.duration_ms/1000}; currentPosition=0; currentDuration=t.duration_ms/1000; cues=[]; renderCues(); showTrack(); updateSeekUI(); }
+function selectTrack(t) {
+  currentTrack={uri:t.uri,id:t.id,name:t.name,artist:t.artists.map(a=>a.name).join(', '),image:t.album.images?.[0]?.url||'',duration:t.duration_ms/1000};
+  currentPosition=0;
+  currentDuration=t.duration_ms/1000;
+  cues=[];
+  trackBpm=null;
+  activeLessonIndex=-1;
+  lessonPlaying=false;
+  document.getElementById('bpmInput').value='';
+  renderCues();
+  renderLesson();
+  showTrack();
+  updateSeekUI();
+  updateRun();
+}
 function showTrack() { if(!currentTrack)return; document.getElementById('trackName').textContent=currentTrack.name; document.getElementById('artistName').textContent=currentTrack.artist; document.getElementById('cover').src=currentTrack.image||''; }
-document.getElementById('playBtn').onclick=async()=>{ if(lessonTracks.length){if(activeLessonIndex<0) activeLessonIndex=0;lessonPlaying=true;if(!currentTrack || currentTrack.id!==lessonTracks[activeLessonIndex].track?.id){loadLessonTrack(activeLessonIndex,true);return;}} if(!currentTrack) return alert('Primeiro escolhe uma música.'); if(!deviceId) return alert('O leitor Spotify ainda não está pronto. Espera alguns segundos e tenta novamente.'); try{ if(player && player.activateElement) await player.activateElement(); document.getElementById('playerStatus').textContent='A iniciar reprodução...'; await api('/me/player/play?device_id='+encodeURIComponent(deviceId),{method:'PUT',body:JSON.stringify({uris:[currentTrack.uri],position_ms:Math.floor(currentPosition*1000)})}); document.getElementById('playerStatus').textContent='A reproduzir no MusicFit Cue.';}catch(e){document.getElementById('playerStatus').textContent='Erro ao reproduzir: '+e.message;alert('Não consegui iniciar a música: '+e.message);} };
+document.getElementById('playBtn').onclick=async()=>{
+  if(!currentTrack) return alert('Primeiro escolhe uma música.');
+  if(!deviceId) return alert('O leitor Spotify ainda não está pronto. Espera alguns segundos e tenta novamente.');
+  try{
+    if(player && player.activateElement) await player.activateElement();
+    document.getElementById('playerStatus').textContent='A iniciar reprodução...';
+    await api('/me/player/play?device_id='+encodeURIComponent(deviceId),{method:'PUT',body:JSON.stringify({uris:[currentTrack.uri],position_ms:Math.floor(currentPosition*1000)})});
+    document.getElementById('playerStatus').textContent='A reproduzir no MusicFit Cue.';
+  }catch(e){
+    document.getElementById('playerStatus').textContent='Erro ao reproduzir: '+e.message;
+    alert('Não consegui iniciar a música: '+e.message);
+  }
+};
 document.getElementById('pauseBtn').onclick=()=>api('/me/player/pause',{method:'PUT'});
 async function seekTo(seconds){ if(!currentTrack) return; const max=currentDuration||0; const target=Math.max(0,Math.min(Number(seconds)||0,max)); currentPosition=target; try{if(player&&typeof player.seek==='function'){await player.seek(Math.floor(target*1000));}else{await api('/me/player/seek?position_ms='+Math.floor(target*1000),{method:'PUT'});}document.getElementById('playerStatus').textContent='Posição: '+fmtClock(target);}catch(e){document.getElementById('playerStatus').textContent='Erro ao mudar de posição: '+e.message;} updateRun(); updateSeekUI();}
 document.getElementById('restartBtn').onclick=()=>seekTo(0); document.getElementById('back10Btn').onclick=()=>seekTo(currentPosition-10); document.getElementById('forward10Btn').onclick=()=>seekTo(currentPosition+10);
