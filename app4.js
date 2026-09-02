@@ -66,6 +66,7 @@ function updateRun(){
   const currentEl=document.getElementById('currentExercise');
   const nextEl=document.getElementById('nextExercise');
   const countEl=document.getElementById('countdown');
+  const timeEl=document.getElementById('runTrackTime');
 
   currentEl.textContent=cur?cur.name:'Preparar';
   const lessonLabel=document.getElementById('lessonTrackLabel');
@@ -74,6 +75,14 @@ function updateRun(){
   }else{
     lessonLabel.textContent='Agora';
   }
+
+  if(timeEl){
+    const duration=Math.max(0,currentDuration||currentTrack?.duration||0);
+    const elapsed=Math.max(0,Math.min(t||0,duration||t||0));
+    const remaining=Math.max(0,duration-elapsed);
+    timeEl.textContent=fmtClock(elapsed)+' / '+fmtClock(duration)+' · faltam '+fmtClock(remaining);
+  }
+
   nextEl.classList.remove('warn');
   countEl.classList.remove('beatwarn');
 
